@@ -1,109 +1,98 @@
 #include "Display.h"
 
-#define UART_CLEANUP 0x10
-#define UART_ENABLE_LED 0x20
-#define UART_BLINK_LED 0x30
-#define UART_ENABLE_SIGNAL 0x40
-#define UART_TIME_EVENT 0x80
+#define USE_ARDUINO_UART_LINK
+#include "src/Link/ArduinoUartLink.h"
 
-Matrix matrix(M_WIDTH, M_HEIGHT, ZIGZAG, LEFT_TOP, DIR_RIGHT);
-Display display(matrix);
+#define BRIGHTNESS_PIN A4
 
-mData player_colors[4] = {mYellow, mBlue, mGreen, mRed};
+using namespace vgs::link;
 
-int brightness = 50;
-
-void drawFrame(mData color, int width=1)
+enum State
 {
-  display.setColor(color);
-  display.rect(0, 0, 15, 15, true);
-  display.setColor(mBlack);
-  display.rect(width, width, 15-width, 15-width, true);
-}
+  Idle,
+  Countdown,
+  Press,
+  Falstart
+};
 
-void showTime(int time)
-{
-  display.setColor(mWhite);
-  display.setCursor(2, 4);
-  if (time < 10)
-  {
-    display.print(0);
-    display.setCursor(9, 4);
-    display.print(time);
-  }
-  else 
-  {
-    display.print(time / 10);
-    display.setCursor(9, 4);
-    display.print(time % 10);
-  }
-}
+Display display;
+ArduinoUartLink link(&Serial);
+State state;
+
+int brightness = 100;
 
 void setup() {
   Serial.begin(9600);
   display.setScale(1);
+
+  pinMode(5, OUTPUT);
+  digitalWrite(5, 1);
+  delay(1000);
+  digitalWrite(5, 0);
 }
 
 void loop() {
-  int newBrightness = (analogRead(A4)) / 6 + 10;
+  int newBrightness = (1024 - analogRead(BRIGHTNESS_PIN)) / 6 + 10;
   if (abs(newBrightness - brightness) > 5)
   {
     brightness = newBrightness;
     display.setBrightness(brightness);
     display.update();
   }
-  if(Serial.available())
+
+  link.tick();
+
+  switch(link.getCommand())
   {
-    int data = Serial.read();
-    if(data == -1)
+    case Command::LedsOff:
     {
-      return;
-    }
-    byte command = (byte)data & 0xF0;
-    byte payload = (byte)data & 0x0F;
-    if(command >= 0x80)
-    {
-      command = 0x80;
-    }
-    switch(command)
-    {
-      case UART_CLEANUP:
+      if(state != Idle)
       {
-        display.clear();
-        display.update();
-        break;
-      }
-      case UART_BLINK_LED:
-      {
-        display.clear();
-        drawFrame(player_colors[payload % 4], 2);
-        display.setColor(mWhite);
-        display.setCursor(5, 4);
-        display.print('F');
-        display.update();
-        break;
-      }
-      case UART_ENABLE_LED:
-      {
-        display.clear();
-        display.setColor(player_colors[payload % 4]);
-        display.fill();
-        display.update();
-        break;
-      }
-      case UART_ENABLE_SIGNAL:
-      {
-        display.clear();
-        drawFrame(mWhite, 1);
-        display.update();
-        break;
-      }
-      case UART_TIME_EVENT:
-      {
-        showTime((byte)data & 0x7F);
-        display.update();
-        break;
+        state = Idle;
+        display.reset();
       }
     }
+    break;
+
+    case Command::PlayerLedOn:
+    case Command::DisplayPlayerLedOn:
+    {
+      if(state == Countdown || state == Idle)
+      {
+        state = Press;
+        display.press(link.getData());
+      }
+    }
+    break;
+
+    case Command::PlayerLedBlink:
+    case Command::DisplayPlayerLedBlink:
+    {
+      if(state == Idle)
+      {
+        state = Falstart;
+        display.falstart(link.getData());
+      }
+    }
+    break;
+
+    case Command::SignalLedOn:
+    {
+      if(state == Idle)
+      {
+        state = Countdown;
+        display.countdown(false);
+      }
+    }
+    break; 
+
+    case Command::UpdateTime:
+    {
+      if(state == Countdown)
+      {
+        display.countdown(true, link.getData());
+      }
+    }
+    break; 
   }
 }

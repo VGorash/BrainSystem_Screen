@@ -1,4 +1,5 @@
-#pragma once
+#ifndef DISPLAY_H
+#define DISPLAY_H
 
 #define M_PIN 7
 #define M_WIDTH 16
@@ -13,15 +14,26 @@
 class Display : public GyverGFX
 {
   public:
-    Display(Matrix& matrix);
+    Display();
 
-    void setColor(mData color);
+    
     void setBrightness(uint8_t value);
 
     void dot(int x, int y, uint8_t fill = GFX_FILL) override;
     void update() override;
 
+    void reset();
+    void countdown(bool timeOnly, int time = -1);
+    void press(int player);
+    void falstart(int player);
+
   private:
-    Matrix& m_matrix;
+    void setColor(mData color);
+    void drawFrame(mData color, int width=1);
+
+  private:
+    Matrix m_matrix = Matrix(M_WIDTH, M_HEIGHT, ZIGZAG, LEFT_TOP, DIR_RIGHT);
     mData m_color = mBlack;
 };
+
+#endif
